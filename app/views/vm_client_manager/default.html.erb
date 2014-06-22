@@ -1,0 +1,392 @@
+<script type="text/javascript"><!--
+
+// Stored image files (array of ArrayBuffer)
+var imgfiles = new Array();
+
+window.onload = function()
+{
+		// Check for File API support.
+		if ( window.File && window.FileReader && window.FileList && window.Blob  ) {
+				// All the File APIs are supported.
+				window.URL = window.URL || window.webkitURL;
+		} else {
+				alert('Oh.. Your browser does not fully support File APIs used in this page.');
+		}
+
+		//check virtual all list
+		update_tables();
+
+};
+
+function update_tables()
+{
+		$.ajax({
+		    type:"GET",
+		    url:"http://157.82.3.161:3000/all_list", 
+		    crossDomain: true,
+		    dataType: "JSONP",
+		    success: function(json_data) {   // 200 OK時
+		        console.log(json_data);
+			$("#virtual_machines_num").html("Virtual Machines("+json_data["domains"].length+"/"+(json_data["domains"].length + json_data["defined_domains"].length) +")");
+			$("#networks_num").html("Networks("+json_data["networks"].length+"/"+(json_data["networks"].length + json_data["defined_networks"].length) +")");
+
+			createVirtualMachinesTable(json_data);
+			createNetworksTable(json_data);
+		    },
+		    error: function() {     
+		        alert("Server Error. Pleasy try again later.");
+		    }
+		});
+}
+
+
+function send_request(target_url, vm_name)
+{
+        console.log(vm_name);
+        $.ajax({
+		    type:"post",
+		    url:target_url, 
+		    data: { target : vm_name},
+		    crossDomain: true,
+		    dataType: "JSONP",
+		    success: function(json_data) {
+		        console.log(json_data);
+			update_tables();
+		    },
+		    error: function() {     
+		        alert("Server Error. Pleasy try again later.");
+		    }
+		});
+
+}
+
+function send_shutdown(vm_name){
+send_request("http://157.82.3.161:3000/shutdown", vm_name);
+}
+
+function send_startup(vm_name){
+send_request("http://157.82.3.161:3000/startup", vm_name);
+}
+
+function send_delete(vm_name){
+send_request("http://157.82.3.161:3000/delete", vm_name);
+}
+
+
+//VIR_DOMAIN_NOSTATE =0 no state
+//VIR_DOMAIN_RUNNING =1 the domain is running
+//VIR_DOMAIN_BLOCKED =2 the domain is blocked on resource
+//VIR_DOMAIN_PAUSED =3 the domain is paused by user
+//VIR_DOMAIN_SHUTDOWN =4 the domain is being shut down
+//VIR_DOMAIN_SHUTOFF =5 the domain is shut off
+//VIR_DOMAIN_CRASHED =6 the domain is crashed
+//VIR_DOMAIN_PMSUSPENDED =7 the domain is suspended by guest power management
+//VIR_DOMAIN_LAST =8
+
+
+function createVirtualMachinesTable(data){
+    target = "<table class='table  table-hover'>";
+
+    //Header part of tree
+    target += "<thead><tr><th>name</th><th>state</th><th>memory</th><th>cpu</th><th>os type</th><th>uuid</th><th>power action</th><th>delete</th></tr></thead>";
+
+    //Body part of tree
+    target += "<tbody>";
+
+    for (var i in data["vm_details_info"]){
+        target_vm = data["vm_details_info"][i];
+
+	var row_color = "active";
+	if (target_vm.state[0] == 1){
+	    row_color = "success";
+	}else{
+	    row_color = "danger";
+	}
+
+	tr_id = "tr_id"+i;
+	target += "<tr id='" + tr_id + "' class='" + row_color+"' value='"+ target_vm.name+"'><th>"+ target_vm.name + "</th><th>";
+
+	if (target_vm.state[0] == 1){
+	    target += "Running"
+	}else{
+	    target += "Power off"
+	}
+	target += "</th><th>" + target_vm.max_memory + "</th><th> " +  target_vm.max_vcpus + "</th><th>" + target_vm.os_type  + "</th><th>" +target_vm.uuid + "</th><th>";
+	if (target_vm.state[0] == 1){
+	    target += '<div align="center"><button id="'+ target_vm.name+'" class="btn btn-warning" onclick="send_shutdown(this.id);"> Shutdown </button></div>';
+	}else{
+	    target += '<div align="center"><button id="'+ target_vm.name+'" class="btn btn-primary" onclick="send_startup(this.id);"> Startup </button></div>';
+	}
+
+	target += "</th><th>" +  '<button id="'+ target_vm.name+'" class="btn btn-danger btn-large" onclick="send_delete(this.id);">Delete</button>' + "</th></tr>"
+    }
+    //End Body part of tree
+    target += "</tbody>";
+
+    target += "</table>";
+    $("#virtual_machines_body").html(target);
+}
+
+function createNetworksTable(data){
+    target = "<table class='table  table-hover'>";
+
+    //Header part of tree
+    target += "<thead><tr><th>name</th><th>bridge</th><th>uuid</th><th>xml_desc</th></thead>";
+
+    //Body part of tree
+    target += "<tbody>";
+
+    for (var i in data["nw_details_info"]){
+        target_nw = data["nw_details_info"][i];
+	target += "<tr><th>"+ target_nw.name + "</th>";
+	target += "<th>" + target_nw.bridge + "</th><th> " +  target_nw.uuid + "</th><th>" + target_nw.xml_desc  + "</th></tr>";
+    }
+
+    //End Body part of tree
+    target += "</tbody>";
+
+    target += "</table>";
+    $("#networks_body").html(target);
+}
+
+function reloadFiles(evnt, tag_name)
+{
+                if(tag_name === undefined) tag_name="canvasin";
+		var files = evnt.target.files;
+		console.log("File Event ");
+		console.log(files);
+
+		// Remove all children
+		var o;
+		o = document.getElementById(tag_name);
+		while ( o.hasChildNodes() ) {
+				o.removeChild(o.firstChild);
+		}
+		document.getElementById('progress').innerText = "None.";
+
+		var f;
+		var i;
+    for ( i = 0; f = files[i]; i++ ) {
+				// We only support jpeg file
+				if ( !f.type.match('image/jpeg') ) {
+						continue;
+				}
+				// File reader
+				var reader = new FileReader();
+				reader.onload = function(e) {
+						// Append to the stored image file list
+						console.log("imgfiles : ");
+						imgfiles.push(e.target.result);
+						console.log(imgfiles);
+						// Convert to blob from array buffer
+						var blob = new Blob([e.target.result], {type: "image/jpeg"});
+						// Create img element and display it
+						var img = document.createElement('img');
+						img.onload = function(e) {
+								// Clean up after the rendering
+								window.URL.revokeObjectURL(img.src);
+						};
+						img.src = window.URL.createObjectURL(blob);
+						img.style.width = "100%";
+						img.class = "img-rounded";
+						img.alt = "non_picture";
+						img.max_width = "100%";
+						document.getElementById(tag_name).appendChild(img);
+						// Enable buttons
+//						document.getElementById('btnfr').disabled = false;
+//						document.getElementById('btnat').disabled = false;
+				}
+				// Read the image file as binary array buffer
+				reader.readAsArrayBuffer(f);
+		}
+}
+
+function applyImgProc(scrptpath)
+{
+		// Remove all children
+		var o;
+		o = document.getElementById('canvasout');
+		while ( o.hasChildNodes() ) {
+				o.removeChild(o.firstChild);
+		}
+
+                var data = new FormData();
+		data.append('file1',document.getElementById('lefile1').files[0]);
+		data.append('file2',document.getElementById('lefile2').files[0]);
+
+		var req = new XMLHttpRequest();
+		req.open('POST', "faceswap", true); // async
+		req.setRequestHeader("Process-Data", false);
+    		req.setRequestHeader("X-CSRF-Token", document.getElementById('authenticity_token').value);
+		req.responseType = 'arraybuffer';
+		req.onload = function(evnt) {
+		    // Check the HTTP response status
+		    if ( this.status == 200 ) {
+		        //var blob = this.response;
+		        var blob = new Blob([this.response], {type: "image/jpeg"});
+		        var img = document.createElement('img');
+		        img.onload = function(e) {
+		        // Clean up after the rendering
+		        window.URL.revokeObjectURL(img.src);
+		    };
+		    img.src = window.URL.createObjectURL(blob);
+		    img.style.width = "100%";
+		    document.getElementById('canvasout').appendChild(img);
+		    document.getElementById('progress').innerText = "Done.";
+		    }
+		};
+		req.send(data);
+
+}
+
+function applyFaceRecognition()
+{
+		document.getElementById('progress').innerText = "Processing face recognition...";
+		applyImgProc("./facerecog");
+}
+
+function applyAdaptiveThreshold()
+{
+		document.getElementById('progress').innerText = "Processing adaptive thresholding...";
+		applyImgProc("./adaptive");
+}
+
+
+function applyFaceSwap()
+{
+		document.getElementById('progress').innerText = "Processing face swaping...";
+		applyImgProc("./faceswap");
+}
+
+//-->
+</script>
+
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+<link href="http://maxcdn.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+<style type="text/css">
+  body { padding-top: 70px; }
+</style>
+
+</head>
+
+<body>
+
+
+<div class="container">
+  <div class="navbar navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <a href="../" class="navbar-brand">Group6 C-1</a>
+        <button class="navbar-toggle" type="button" data-toggle="collapse" data-target="#navbar-main">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+      </div>
+      <div class="navbar-collapse collapse" id="navbar-main">
+        <ul class="nav navbar-nav">
+          <li class="dropdown">
+            <a class="dropdown-toggle" data-toggle="dropdown" href="#" id="themes">Themes <span class="caret"></span></a>
+            <ul class="dropdown-menu" aria-labelledby="themes">
+              <li><a href="../default/">Default</a></li>
+              <li class="divider"></li>
+              <li><a href="../amelia/">Amelia</a></li>
+              <li><a href="../united/">United</a></li>
+              <li><a href="../yeti/">Yeti</a></li>
+            </ul>
+          </li>
+          <li>
+            <a href="../help/">Help</a>
+          </li>
+          <li>
+            <a href="http://www.ci.i.u-tokyo.ac.jp/site/?cloud-pbl">Cloud PBL</a>
+          </li>
+          <li class="dropdown">
+            <a class="dropdown-toggle" data-toggle="dropdown" href="#" id="download">Download <span class="caret"></span></a>
+            <ul class="dropdown-menu" aria-labelledby="download">
+              <li><a href="./bootstrap.min.css">bootstrap.min.css</a></li>
+              <li><a href="./bootstrap.css">bootstrap.css</a></li>
+              <li class="divider"></li>
+              <li><a href="./variables.less">variables.less</a></li>
+              <li><a href="./bootswatch.less">bootswatch.less</a></li>
+            </ul>
+          </li>
+        </ul>
+	
+        <ul class="nav navbar-nav navbar-right">
+          <li><a href="https://edu.jar.jp/redmine/projects/group-6-c1" target="_blank">RedMine</a></li>
+        </ul>
+	
+      </div>
+    </div>
+  </div>
+
+
+<table>
+  <form name="pictures" action="" enctype="multipart/form-data" method="post" >    
+    <div class="container">
+      <div id="header">
+        <h1>Virtual Machine Manager Client</h1>
+      </div>
+      <div class="row">
+	<div class="col-lg-12">
+	  <div class="panel panel-primary">
+	    <div class="panel-heading">
+	      <h3 id="virtual_machines_num">Virtual Machines</h3>
+	    </div>
+	    <div class="panel-body" id="virtual_machines_body">
+	      <p></p>
+	    </div>
+	  </div>
+	  <div class="row">
+	  </div>
+	  <div class="row">
+	  </div>
+	</div>
+	
+	<div class="col-lg-1">
+	  <p></p>
+	</div>
+      </div>
+
+
+      <div class="row">
+	<div class="col-lg-12">
+	  <div class="panel panel-primary">
+	    <div class="panel-heading">
+	      <h3 id="networks_num">Networks</h3>
+	    </div>
+	    <div class="panel-body" id="networks_body">
+	      <p></p>
+	    </div>
+	  </div>
+	  <div class="row">
+	  </div>
+	  <div class="row">
+	  </div>
+	</div>
+      </div>
+      <div id="footer">
+	<div class="row">
+	  <p></p>
+	</div>
+      </div>
+    </div>
+  </form>
+</table>	
+
+
+
+<div class="container">
+  <div id="header">
+    <div align="center">
+      <div class="row">
+	<div class="col-md-6 col-md-offset-2">
+	</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%= hidden_field_tag :authenticity_token, form_authenticity_token %>
